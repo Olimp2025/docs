@@ -25,9 +25,11 @@ class TableExtractor:
         self.store_process_image("4_inverteded.jpg", self.inverted_image)
         self.dilate_image()
         self.store_process_image("5_dialateded.jpg", self.dilated_image)
-
         self.edge_detection()
-        self.store_process_image("5_2_dialateded.jpg", self.dilated_image)
+        self.store_process_image("5_2_edges.jpg", self.dilated_image)
+        self.image_rotation()
+        self.store_process_image("5_3_rotated.jpg", self.dilated_image)
+
 
         self.find_contours()
         self.store_process_image("6_all_contours.jpg", self.image_with_all_contours)
@@ -65,29 +67,69 @@ class TableExtractor:
         self.inverted_image = cv2.bitwise_not(self.thresholded_image)
 
     def dilate_image(self):
-        self.dilated_image = cv2.dilate(self.inverted_image, None, iterations=13)
+        self.dilated_image = cv2.dilate(self.inverted_image, None, iterations=20)
 
     def edge_detection(self):
         # Применяем Canny для выделения границ
         self.edges = cv2.Canny(self.dilated_image, 50, 150, apertureSize=3)
+
         # Находим контуры
         contours, _ = cv2.findContours(self.edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
         # Проверяем, найдены ли контуры
         if not contours:
             print("Контуры не найдены")
             return
+
+        # Определяем углы наклона всех контуров
+        angles = []
+        rotated_rects = []
+        for cnt in contours:
+            rect = cv2.minAreaRect(cnt)
+            angle = rect[-1]
+            if angle < -45:
+                angle += 90  # Коррекция угла
+            angles.append(angle)
+            rotated_rects.append((rect, cnt))
+
+        # Определяем медианный угол наклона (чтобы исключить выбросы)
+        median_angle = np.median(angles)
+
+        # Фильтруем контуры, удаляя те, у которых угол слишком отличается
+        threshold = 3  # Допустимое отклонение в градусах
+        self.filtered_contours = [cnt for rect, cnt in rotated_rects if abs(rect[-1] - median_angle) <= threshold]
+
         # Отбираем самые длинные горизонтальные объекты
-        horizontal_contours = sorted(contours, key=lambda cnt: cv2.boundingRect(cnt)[2], reverse=True)[:5]
+        filtered_rects = sorted([rect for rect, cnt in rotated_rects if abs(rect[-1] - median_angle) <= threshold],
+                                key=lambda rect: rect[1][0], reverse=True)[:5]
+
         # Копируем изображение для отображения результатов
         self.image_with_horizontal_contours = self.image.copy()
+
         # Рисуем повернутые прямоугольники
-        for cnt in horizontal_contours:
-            rect = cv2.minAreaRect(cnt)  # Получаем минимальный ограничивающий прямоугольник
+        for rect in filtered_rects:
             box = cv2.boxPoints(rect)  # Получаем углы прямоугольника
             box = np.intp(box)  # Преобразуем координаты в целые числа
             cv2.drawContours(self.image_with_horizontal_contours, [box], 0, (0, 255, 0),
                              3)  # Рисуем повернутый прямоугольник
+
+        # Определяем медианный угол среди отфильтрованных контуров
+        if self.filtered_contours:
+            self.median_filtered_angle = 0
+            self.median_filtered_angle = np.median([cv2.minAreaRect(cnt)[-1] for cnt in self.filtered_contours])
+        else:
+            self.median_filtered_angle = None
+            print("Нет отфильтрованных контуров для вычисления медианного угла")
+
         print("Контуры найдены")
+
+    def image_rotation(self):
+        # Определяем медианный угол среди отфильтрованных контуров
+        if self.filtered_contours:
+            self.median_filtered_angle = np.median([cv2.minAreaRect(cnt)[-1] for cnt in self.filtered_contours])
+        else:
+            self.median_filtered_angle = None
+            print("Нет отфильтрованных контуров для вычисления медианного угла")
 
     def find_contours(self):
         self.contours, self.hierarchy = cv2.findContours(self.dilated_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
@@ -205,7 +247,7 @@ class TableExtractor:
 
 
 if __name__ == '__main__':
-    file_name = "img/01.jpg"
+    file_name = "img/scan_02.jpg"
     TE = TableExtractor(file_name)
     perspective_corrected_image_with_padding, contour_with_max_area = TE.execute("all_tables")
 
