@@ -4,10 +4,10 @@ import numpy as np
 
 class TableExtractor:
 
-    def __init__(self, image_path):
-        self.image_path = image_path
+    def __init__(self, dict_path, file_name):
+        self.image_path = dict_path + "/" + file_name
 
-    def execute(self, type_of_crop):
+    def execute(self):
         """
             Функция выравнивает изображение и обрезает края
 
@@ -26,30 +26,12 @@ class TableExtractor:
         self.dilate_image()
         self.store_process_image("5_dialateded.jpg", self.dilated_image)
         self.edge_detection()
-        self.store_process_image("5_2_edges.jpg", self.dilated_image)
+        self.store_process_image("6_edges.jpg", self.dilated_image)
         self.image_rotation()
-        self.store_process_image("5_3_rotated.jpg", self.dilated_image)
+        self.store_process_image("7_rotated.jpg", self.dilated_image)
+        self.save_image()
 
-
-        self.find_contours()
-        self.store_process_image("6_all_contours.jpg", self.image_with_all_contours)
-        self.filter_contours_and_leave_only_rectangles()
-        self.store_process_image("7_only_rectangular_contours.jpg", self.image_with_only_rectangular_contours)
-        self.find_largest_contour_by_area()
-        self.store_process_image("8_contour_with_max_area.jpg", self.image_with_contour_with_max_area)
-        self.order_points_in_the_contour_with_max_area()
-        self.store_process_image("9_with_4_corner_points_plotted.jpg", self.image_with_points_plotted)
-        self.calculate_new_width_and_height_of_image()
-        if type_of_crop == "all_tables":
-            self.apply_perspective_transform_all_tables()
-        if type_of_crop == "only_amount":
-            self.apply_perspective_transform()
-        self.store_process_image("10_perspective_corrected.jpg", self.perspective_corrected_image)
-        # self.add_10_percent_padding()
-        # self.store_process_image("11_perspective_corrected_with_padding.jpg",
-        #                          self.perspective_corrected_image_with_padding)
-        # self.crop()
-        return self.perspective_corrected_image, self.contour_with_max_area
+        return
 
     def read_image(self):
         self.image = cv2.imread(self.image_path)
@@ -67,7 +49,7 @@ class TableExtractor:
         self.inverted_image = cv2.bitwise_not(self.thresholded_image)
 
     def dilate_image(self):
-        self.dilated_image = cv2.dilate(self.inverted_image, None, iterations=20)
+        self.dilated_image = cv2.dilate(self.inverted_image, None, iterations=10)
 
     def edge_detection(self):
         # Применяем Canny для выделения границ
@@ -75,6 +57,16 @@ class TableExtractor:
 
         # Находим контуры
         contours, _ = cv2.findContours(self.edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+        # Находим максимальную длину самой длинной стороны
+        # Фильтруем контуры, оставляя только те, у которых длина самой длинной стороны ≥ 70% от max_length
+        # Сортируем оставшиеся контуры по длине самой длинной стороны в убывающем порядке
+        max_length = max(max(cv2.minAreaRect(c)[1]) for c in contours)
+        filtered_contours = [c for c in contours if max(cv2.minAreaRect(c)[1]) >= 0.7 * max_length]
+        contours = sorted(filtered_contours, key=lambda c: max(cv2.minAreaRect(c)[1]), reverse=True)
+
+        # Находим контуры с самой длинной стороной
+        #contours = sorted(contours, key=lambda c: max(cv2.minAreaRect(c)[1]), reverse=True)[:5]
 
         # Проверяем, найдены ли контуры
         if not contours:
@@ -101,7 +93,7 @@ class TableExtractor:
 
         # Отбираем самые длинные горизонтальные объекты
         filtered_rects = sorted([rect for rect, cnt in rotated_rects if abs(rect[-1] - median_angle) <= threshold],
-                                key=lambda rect: rect[1][0], reverse=True)[:5]
+                                key=lambda rect: rect[1][0], reverse=True)
 
         # Копируем изображение для отображения результатов
         self.image_with_horizontal_contours = self.image.copy()
@@ -123,131 +115,54 @@ class TableExtractor:
 
         print("Контуры найдены")
 
-    def image_rotation(self):
-        # Определяем медианный угол среди отфильтрованных контуров
-        if self.filtered_contours:
-            self.median_filtered_angle = np.median([cv2.minAreaRect(cnt)[-1] for cnt in self.filtered_contours])
+    def image_rotation(self) -> None:
+        """ Поворачивает исходное изображение на медианный угол, чтобы его выровнять """
+        if self.median_filtered_angle is None:
+            print("Ошибка: угол не определен.")
+            return
+
+        # Коррекция угла: OpenCV поворачивает в противоположном направлении
+        angle = self.median_filtered_angle
+
+        # Определяем центр изображения
+        (h, w) = self.image.shape[:2]
+        center = (w // 2, h // 2)
+
+        # Создаем матрицу поворота
+        rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+
+        # Определяем новые размеры изображения после поворота
+        cos = abs(rotation_matrix[0, 0])
+        sin = abs(rotation_matrix[0, 1])
+        new_w = int(h * sin + w * cos)
+        new_h = int(h * cos + w * sin)
+
+        # Корректируем матрицу поворота, чтобы учесть смещение центра
+        rotation_matrix[0, 2] += (new_w - w) / 2
+        rotation_matrix[1, 2] += (new_h - h) / 2
+
+        # Применяем поворот с учетом новых размеров
+        self.rotated_image = cv2.warpAffine(self.image, rotation_matrix, (new_w, new_h), flags=cv2.INTER_LINEAR,
+                                       borderMode=cv2.BORDER_REPLICATE)
+
+        print("Поворот")
+
+    def save_image(self) -> None:
+        """ Сохраняет повернутое изображение, если оно было создано """
+        if hasattr(self, 'rotated_image') and self.rotated_image is not None:
+            cv2.imwrite(f"corrected_images/{file_name}", self.rotated_image)
+            print("Финальное повернутое изображение сохранено.")
         else:
-            self.median_filtered_angle = None
-            print("Нет отфильтрованных контуров для вычисления медианного угла")
-
-    def find_contours(self):
-        self.contours, self.hierarchy = cv2.findContours(self.dilated_image, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-        self.image_with_all_contours = self.image.copy()
-        cv2.drawContours(self.image_with_all_contours, self.contours, -1, (0, 255, 0), 3)
-
-    def filter_contours_and_leave_only_rectangles(self):
-        self.rectangular_contours = []
-        for contour in self.contours:
-            peri = cv2.arcLength(contour, True)
-            approx = cv2.approxPolyDP(contour, 0.02 * peri, True)
-            if len(approx) == 4:
-                self.rectangular_contours.append(approx)
-        self.image_with_only_rectangular_contours = self.image.copy()
-        cv2.drawContours(self.image_with_only_rectangular_contours, self.rectangular_contours, -1, (0, 255, 0), 3)
-
-    def find_largest_contour_by_area(self):
-        max_area = 0
-        self.contour_with_max_area = None
-        for contour in self.rectangular_contours:
-            area = cv2.contourArea(contour)
-            if area > max_area:
-                max_area = area
-                self.contour_with_max_area = contour
-        self.image_with_contour_with_max_area = self.image.copy()
-        cv2.drawContours(self.image_with_contour_with_max_area, [self.contour_with_max_area], -1, (0, 255, 0), 3)
-
-    def order_points_in_the_contour_with_max_area(self):
-        self.contour_with_max_area_ordered = self.order_points(self.contour_with_max_area)
-        self.image_with_points_plotted = self.image.copy()
-        for point in self.contour_with_max_area_ordered:
-            point_coordinates = (int(point[0]), int(point[1]))
-            self.image_with_points_plotted = cv2.circle(self.image_with_points_plotted, point_coordinates, 10,
-                                                        (0, 0, 255), -1)
-
-    def calculate_new_width_and_height_of_image(self):
-        existing_image_width = self.image.shape[1]
-        existing_image_width_reduced_by_10_percent = int(existing_image_width * 0.9)
-
-        distance_between_top_left_and_top_right = self.calculateDistanceBetween2Points(
-            self.contour_with_max_area_ordered[0], self.contour_with_max_area_ordered[1])
-        distance_between_top_left_and_bottom_left = self.calculateDistanceBetween2Points(
-            self.contour_with_max_area_ordered[0], self.contour_with_max_area_ordered[3])
-
-        aspect_ratio = distance_between_top_left_and_bottom_left / distance_between_top_left_and_top_right
-
-        self.new_image_width = existing_image_width_reduced_by_10_percent
-        self.new_image_height = int(self.new_image_width * aspect_ratio)
-
-    def apply_perspective_transform(self):
-        pts1 = np.float32(self.contour_with_max_area_ordered)
-        pts2 = np.float32([[0, 0], [self.new_image_width, 0], [self.new_image_width, self.new_image_height],
-                           [0, self.new_image_height]])
-        matrix = cv2.getPerspectiveTransform(pts1, pts2)
-        self.perspective_corrected_image = cv2.warpPerspective(self.image, matrix,
-                                                               (self.new_image_width, self.new_image_height))
-
-    def apply_perspective_transform_all_tables(self):
-        pts1 = np.float32(self.contour_with_max_area_ordered)
-        pts2 = np.float32([[0, 420], [self.new_image_width, 420], [self.new_image_width, 3271],
-                           [0, 3271]])
-        matrix = cv2.getPerspectiveTransform(pts1, pts2)
-        self.perspective_corrected_image = cv2.warpPerspective(self.image, matrix,
-                                                               (self.new_image_width, 3485))
-
-    def add_10_percent_padding(self):
-        image_height = self.image.shape[0]
-        padding = int(image_height * 0.1)
-        self.perspective_corrected_image_with_padding = cv2.copyMakeBorder(self.perspective_corrected_image, padding,
-                                                                           padding, padding, padding,
-                                                                           cv2.BORDER_CONSTANT, value=[255, 255, 255])
-
-    def draw_contours(self):
-        self.image_with_contours = self.image.copy()
-        cv2.drawContours(self.image_with_contours, [self.contour_with_max_area], -1, (0, 255, 0), 1)
-
-    def calculateDistanceBetween2Points(self, p1, p2):
-        dis = ((p2[0] - p1[0]) ** 2 + (p2[1] - p1[1]) ** 2) ** 0.5
-        return dis
-
-    def order_points(self, pts):
-        # initialzie a list of coordinates that will be ordered
-        # such that the first entry in the list is the top-left,
-        # the second entry is the top-right, the third is the
-        # bottom-right, and the fourth is the bottom-left
-        pts = pts.reshape(4, 2)
-        rect = np.zeros((4, 2), dtype="float32")
-
-        # the top-left point will have the smallest sum, whereas
-        # the bottom-right point will have the largest sum
-        s = pts.sum(axis=1)
-        rect[0] = pts[np.argmin(s)]
-        rect[2] = pts[np.argmax(s)]
-
-        # now, compute the difference between the points, the
-        # top-right point will have the smallest difference,
-        # whereas the bottom-left will have the largest difference
-        diff = np.diff(pts, axis=1)
-        rect[1] = pts[np.argmin(diff)]
-        rect[3] = pts[np.argmax(diff)]
-
-        # return the ordered coordinates
-        return rect
+            print("Ошибка: повернутое изображение отсутствует.")
 
     def store_process_image(self, file_name, image):
         path = "./process_images/table_extractor/" + file_name
         cv2.imwrite(path, image)
 
-    def crop(self):
-        y = self.perspective_corrected_image.shape[0]
-        x = self.perspective_corrected_image.shape[1]
-        x2 = int(x - x * 0.04)
-        x1 = int(0 + x * 0.04)
-        self.cropped_image = self.perspective_corrected_image[:, x1:x2]
-
 
 if __name__ == '__main__':
-    file_name = "img/scan_02.jpg"
-    TE = TableExtractor(file_name)
-    perspective_corrected_image_with_padding, contour_with_max_area = TE.execute("all_tables")
+    dict_path = "target_images"
+    file_name = "02_rotated_1.jpg"
+    TE = TableExtractor(dict_path, file_name)
+    TE.execute()
 
