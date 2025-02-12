@@ -9,26 +9,12 @@ class TableExtractor:
 
     def execute(self):
         """
-            Функция выравнивает изображение и обрезает края
-
-            type_of_crop:
-                "all_tables" - обрезает изображение по краям и оставляет все таблицы
-                "only_amount" - обрезает изображение по краям таблицы по выполненным работам
+            Класс выравнивает изображение
         """
         self.read_image()
-        self.store_process_image("0_original.jpg", self.image)
-        self.convert_image_to_grayscale()
-        self.store_process_image("1_grayscaled.jpg", self.grayscale_image)
-        self.threshold_image()
-        self.store_process_image("3_thresholded.jpg", self.thresholded_image)
-        self.invert_image()
-        self.store_process_image("4_inverteded.jpg", self.inverted_image)
-        self.dilate_image()
-        self.store_process_image("5_dialateded.jpg", self.dilated_image)
+        self.filter_image()
         self.edge_detection()
-        self.store_process_image("6_edges.jpg", self.dilated_image)
         self.image_rotation()
-        self.store_process_image("7_rotated.jpg", self.dilated_image)
         self.save_image()
 
         return
@@ -36,37 +22,24 @@ class TableExtractor:
     def read_image(self):
         self.image = cv2.imread(self.image_path)
 
-    def convert_image_to_grayscale(self):
+    def filter_image(self):
         self.grayscale_image = cv2.cvtColor(self.image, cv2.COLOR_BGR2GRAY)
-
-    def blur_image(self):
-        self.blurred_image = cv2.blur(self.grayscale_image, (5, 5))
-
-    def threshold_image(self):
         self.thresholded_image = cv2.threshold(self.grayscale_image, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)[1]
-
-    def invert_image(self):
         self.inverted_image = cv2.bitwise_not(self.thresholded_image)
-
-    def dilate_image(self):
         self.dilated_image = cv2.dilate(self.inverted_image, None, iterations=10)
 
     def edge_detection(self):
         # Применяем Canny для выделения границ
-        self.edges = cv2.Canny(self.dilated_image, 50, 150, apertureSize=3)
-
         # Находим контуры
-        contours, _ = cv2.findContours(self.edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
         # Находим максимальную длину самой длинной стороны
         # Фильтруем контуры, оставляя только те, у которых длина самой длинной стороны ≥ 70% от max_length
         # Сортируем оставшиеся контуры по длине самой длинной стороны в убывающем порядке
+
+        self.edges = cv2.Canny(self.dilated_image, 50, 150, apertureSize=3)
+        contours, _ = cv2.findContours(self.edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         max_length = max(max(cv2.minAreaRect(c)[1]) for c in contours)
         filtered_contours = [c for c in contours if max(cv2.minAreaRect(c)[1]) >= 0.7 * max_length]
         contours = sorted(filtered_contours, key=lambda c: max(cv2.minAreaRect(c)[1]), reverse=True)
-
-        # Находим контуры с самой длинной стороной
-        #contours = sorted(contours, key=lambda c: max(cv2.minAreaRect(c)[1]), reverse=True)[:5]
 
         # Проверяем, найдены ли контуры
         if not contours:
@@ -74,6 +47,7 @@ class TableExtractor:
             return
 
         # Определяем углы наклона всех контуров
+        # Определяем медианный угол наклона (чтобы исключить выбросы)
         angles = []
         rotated_rects = []
         for cnt in contours:
@@ -83,22 +57,18 @@ class TableExtractor:
                 angle += 90  # Коррекция угла
             angles.append(angle)
             rotated_rects.append((rect, cnt))
-
-        # Определяем медианный угол наклона (чтобы исключить выбросы)
         median_angle = np.median(angles)
 
         # Фильтруем контуры, удаляя те, у которых угол слишком отличается
+        # Отбираем самые длинные горизонтальные объекты
         threshold = 3  # Допустимое отклонение в градусах
         self.filtered_contours = [cnt for rect, cnt in rotated_rects if abs(rect[-1] - median_angle) <= threshold]
-
-        # Отбираем самые длинные горизонтальные объекты
         filtered_rects = sorted([rect for rect, cnt in rotated_rects if abs(rect[-1] - median_angle) <= threshold],
                                 key=lambda rect: rect[1][0], reverse=True)
 
         # Копируем изображение для отображения результатов
-        self.image_with_horizontal_contours = self.image.copy()
-
         # Рисуем повернутые прямоугольники
+        self.image_with_horizontal_contours = self.image.copy()
         for rect in filtered_rects:
             box = cv2.boxPoints(rect)  # Получаем углы прямоугольника
             box = np.intp(box)  # Преобразуем координаты в целые числа
@@ -113,39 +83,31 @@ class TableExtractor:
             self.median_filtered_angle = None
             print("Нет отфильтрованных контуров для вычисления медианного угла")
 
-        print("Контуры найдены")
+        print("Контуры")
 
     def image_rotation(self) -> None:
-        """ Поворачивает исходное изображение на медианный угол, чтобы его выровнять """
+        """ Поворачивает исходное изображение на медианный угол и сохраняет оригинальное разрешение """
         if self.median_filtered_angle is None:
             print("Ошибка: угол не определен.")
             return
 
-        # Коррекция угла: OpenCV поворачивает в противоположном направлении
+        # Коррекция угла
+        # Определяем центр и размеры изображения
+        # Создаем матрицу поворота
+        # Применяем поворот с оригинальными размерами
         angle = self.median_filtered_angle
-
-        # Определяем центр изображения
         (h, w) = self.image.shape[:2]
         center = (w // 2, h // 2)
-
-        # Создаем матрицу поворота
         rotation_matrix = cv2.getRotationMatrix2D(center, angle, 1.0)
+        rotated_full = cv2.warpAffine(self.image, rotation_matrix, (w, h), flags=cv2.INTER_LINEAR,
+                                      borderMode=cv2.BORDER_REPLICATE)
 
-        # Определяем новые размеры изображения после поворота
-        cos = abs(rotation_matrix[0, 0])
-        sin = abs(rotation_matrix[0, 1])
-        new_w = int(h * sin + w * cos)
-        new_h = int(h * cos + w * sin)
+        # Центрируем и обрезаем изображение до исходного размера
+        crop_x = (rotated_full.shape[1] - w) // 2
+        crop_y = (rotated_full.shape[0] - h) // 2
+        self.rotated_image = rotated_full[crop_y:crop_y + h, crop_x:crop_x + w]
 
-        # Корректируем матрицу поворота, чтобы учесть смещение центра
-        rotation_matrix[0, 2] += (new_w - w) / 2
-        rotation_matrix[1, 2] += (new_h - h) / 2
-
-        # Применяем поворот с учетом новых размеров
-        self.rotated_image = cv2.warpAffine(self.image, rotation_matrix, (new_w, new_h), flags=cv2.INTER_LINEAR,
-                                       borderMode=cv2.BORDER_REPLICATE)
-
-        print("Поворот")
+        print("Поворот выполнен и размер сохранен")
 
     def save_image(self) -> None:
         """ Сохраняет повернутое изображение, если оно было создано """
@@ -154,10 +116,6 @@ class TableExtractor:
             print("Финальное повернутое изображение сохранено.")
         else:
             print("Ошибка: повернутое изображение отсутствует.")
-
-    def store_process_image(self, file_name, image):
-        path = "./process_images/table_extractor/" + file_name
-        cv2.imwrite(path, image)
 
 
 if __name__ == '__main__':
