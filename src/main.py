@@ -201,7 +201,7 @@ if __name__ == '__main__':
             executor.submit(process_file, file_name, dict_path, output_dir)
 
     # Вывод итоговых результатов
-    print("\nОбщие результаты:")
+    print("\nОбщие результаты: ")
     print(f"Общее количество совпавших углов: {src.utils.total_matched}")
     print(f"Общее количество несовпавших углов: {src.utils.total_unmatched}")
     print(f"Общее количество нераспознанных углов: {src.utils.total_not_compared}")
