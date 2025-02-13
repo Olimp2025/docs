@@ -211,3 +211,7 @@ if __name__ == '__main__':
     print("\nОбщие результаты:")
     print(f"Общее количество совпавших углов: {src.utils.total_matched}")
     print(f"Общее количество несовпавших углов: {src.utils.total_unmatched}")
+    print(f"Общее количество нераспознанных углов: {src.utils.total_not_compared}")
+
+    Accuracy = src.utils.total_matched / (src.utils.total_unmatched + src.utils.total_not_compared + src.utils.total_matched)
+    print(f"Средняя точность: {Accuracy:.2f}")
