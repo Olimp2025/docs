@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 import os
 
-from src.utils import compare_angle
+import src.utils
 
 
 class DocRotater:
@@ -69,7 +69,7 @@ class DocRotater:
         self.inverted_image = cv2.bitwise_not(self.thresholded_image)
         self.dilated_image = cv2.dilate(self.inverted_image, None, iterations=10)
 
-    @compare_angle
+    @src.utils.compare_angle
     def edge_detection(self) -> None:
         """
         Применяет Canny для выделения границ, находит контуры, фильтрует их по длине
@@ -191,20 +191,23 @@ if __name__ == '__main__':
 
     # Допустимые расширения изображений
     allowed_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff'}
-
     # Перебираем все файлы в директории dict_path
     for file_name in os.listdir(dict_path):
         if file_name.startswith("."):
             continue
 
-        # Фильтруем файлы по расширению
         ext = os.path.splitext(file_name)[1].lower()
         if ext not in allowed_extensions:
             continue
 
-        print(f"Обрабатывается файл: {file_name}")
+        print(f"\nОбрабатывается файл: {file_name}")
         try:
             extractor = DocRotater(dict_path, file_name, output_dir)
             extractor.execute()
         except Exception as e:
             print(f"Ошибка при обработке файла {file_name}: {e}")
+
+    # Вывод итоговых результатов
+    print("\nОбщие результаты:")
+    print(f"Общее количество совпавших углов: {src.utils.total_matched}")
+    print(f"Общее количество несовпавших углов: {src.utils.total_unmatched}")
