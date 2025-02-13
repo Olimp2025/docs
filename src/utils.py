@@ -5,10 +5,11 @@ total_matched = 0
 total_unmatched = 0
 total_not_compared = 0
 
+
 def compare_angle(func):
     """
     Декоратор, который после выполнения метода сравнивает вычисленный угол self.median_filtered_angle
-    с ожидаемым значением, взятым из соответствующего .txt файла в папке 'rotation_angles'.
+    с ожидаемым значением, взятым из соответствующего .txt файла в папке 'angles'.
     Также обновляет глобальные счётчики:
       - total_matched: когда разница меньше 1 градуса,
       - total_unmatched: когда разница 1 градус и более,
@@ -21,7 +22,7 @@ def compare_angle(func):
         if self.median_filtered_angle is not None:
             # Формируем имя файла с ожидаемым углом (заменяем расширение на .txt)
             base_name, _ = os.path.splitext(self.file_name)
-            expected_angle_path = os.path.join("rotation_angles", base_name + ".txt")
+            expected_angle_path = os.path.join("angles", base_name + ".txt")
 
             # Приводим вычисленный угол к единому формату
             if self.median_filtered_angle > 45:

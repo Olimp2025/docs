@@ -185,13 +185,12 @@ class DocRotater:
 
 
 if __name__ == '__main__':
-    dict_path = "target_images"
+    dict_path = "output_images"
     output_dir = "corrected_images"
     os.makedirs(output_dir, exist_ok=True)
 
-    # Допустимые расширения изображений
     allowed_extensions = {'.jpg', '.jpeg', '.png', '.bmp', '.tif', '.tiff'}
-    # Перебираем все файлы в директории dict_path
+    # Перебираем все файлы в директории
     for file_name in os.listdir(dict_path):
         if file_name.startswith("."):
             continue

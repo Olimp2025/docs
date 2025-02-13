@@ -4,8 +4,8 @@ import os
 import random
 
 input_folder = "input_images/"
-output_folder_images = "target_images/"
-output_folder_angles = "rotation_angles/"
+output_folder_images = "output_images/"
+output_folder_angles = "angles/"
 
 os.makedirs(output_folder_images, exist_ok=True)
 os.makedirs(output_folder_angles, exist_ok=True)
