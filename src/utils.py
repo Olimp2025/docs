@@ -19,18 +19,18 @@ def compare_angle(func):
         global total_matched, total_unmatched, total_not_compared
         result = func(self, *args, **kwargs)
         # Проверяем, вычислен ли медианный угол
-        if self.median_filtered_angle is not None:
+        if self.median_angle is not None:
             # Формируем имя файла с ожидаемым углом (заменяем расширение на .txt)
             base_name, _ = os.path.splitext(self.file_name)
             expected_angle_path = os.path.join("angles", base_name + ".txt")
 
             # Приводим вычисленный угол к единому формату
-            if self.median_filtered_angle > 45:
-                corrected = self.median_filtered_angle - 90
-            elif self.median_filtered_angle < -45:
-                corrected = self.median_filtered_angle + 90
+            if self.median_angle > 45:
+                corrected = self.median_angle - 90
+            elif self.median_angle < -45:
+                corrected = self.median_angle + 90
             else:
-                corrected = self.median_filtered_angle
+                corrected = self.median_angle
             corrected = -corrected
 
             if os.path.exists(expected_angle_path):
