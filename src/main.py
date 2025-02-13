@@ -189,7 +189,7 @@ def process_file(file_name, dict_path, output_dir):
 
 
 if __name__ == '__main__':
-    dict_path = "test"
+    dict_path = "output_images"
     output_dir = "corrected_images"
     os.makedirs(output_dir, exist_ok=True)
 
